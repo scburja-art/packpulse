@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import api from '../services/api';
+import { RANGES, formatPrice, formatDate } from '../utils/format';
 
 interface CollectionItem {
   id: string;
@@ -33,6 +34,7 @@ interface SearchCard {
   set_name: string;
   set_code: string;
   rarity: string | null;
+  image_url: string | null;
 }
 
 interface PricePoint {
@@ -49,29 +51,9 @@ const RARITY_COLORS: Record<string, string> = {
   'secret rare': '#e94560',
 };
 
-const RANGES = [
-  { key: 'd', label: '1D' },
-  { key: 'w', label: '1W' },
-  { key: 'm', label: '1M' },
-  { key: '3m', label: '3M' },
-  { key: '6m', label: '6M' },
-  { key: 'y', label: '1Y' },
-  { key: 'all', label: 'ALL' },
-];
-
 function rarityColor(rarity: string | null): string {
   if (!rarity) return '#888';
   return RARITY_COLORS[rarity.toLowerCase()] || '#888';
-}
-
-function formatPrice(price: number | null | undefined): string {
-  if (price == null) return '--';
-  return `$${price.toFixed(2)}`;
-}
-
-function formatDate(d: string): string {
-  const date = new Date(d + 'T00:00:00');
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // --- Add Cards Modal ---
@@ -139,12 +121,19 @@ function AddCardsModal({ collectionId, onClose, onAdded }: { collectionId: strin
               {!loading && query && results.length === 0 && <p style={{ color: '#8899aa', textAlign: 'center', padding: '20px' }}>No cards found</p>}
               {results.map((card) => (
                 <div key={card.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #0f3460' }}>
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: 500 }}>{card.name}</div>
-                    <div style={{ fontSize: '12px', color: '#8899aa' }}>{card.set_name} · {card.number}</div>
-                    {card.rarity && <span style={{ fontSize: '11px', color: rarityColor(card.rarity), fontWeight: 600 }}>{card.rarity}</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                    {card.image_url ? (
+                      <img src={card.image_url} alt={card.name} style={{ width: '40px', height: 'auto', borderRadius: '4px', flexShrink: 0 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    ) : (
+                      <div style={{ width: '40px', height: '56px', borderRadius: '4px', backgroundColor: '#1a1a2e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: '#555', flexShrink: 0, textAlign: 'center', padding: '2px' }}>{card.name}</div>
+                    )}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: 500 }}>{card.name}</div>
+                      <div style={{ fontSize: '12px', color: '#8899aa' }}>{card.set_name} · {card.number}</div>
+                      {card.rarity && <span style={{ fontSize: '11px', color: rarityColor(card.rarity), fontWeight: 600 }}>{card.rarity}</span>}
+                    </div>
                   </div>
-                  <button onClick={() => setAddForm({ card, quantity: '1', price: '' })} style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', backgroundColor: '#e94560', color: '#fff', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Add</button>
+                  <button onClick={() => setAddForm({ card, quantity: '1', price: '' })} style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', backgroundColor: '#e94560', color: '#fff', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>Add</button>
                 </div>
               ))}
             </div>
@@ -246,6 +235,12 @@ function CardDetailModal({ item, onClose, onToggleFav }: { item: CollectionItem;
             </button>
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8899aa', fontSize: '20px', cursor: 'pointer' }}>✕</button>
           </div>
+
+          {item.image_url && (
+            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+              <img src={item.image_url} alt={item.name} style={{ maxWidth: '200px', width: '100%', height: 'auto', borderRadius: '8px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            </div>
+          )}
 
           {item.rarity && (
             <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 600, color: '#fff', backgroundColor: rarityColor(item.rarity), marginBottom: '16px' }}>
@@ -419,10 +414,15 @@ export default function CollectionPage() {
               </button>
 
               <div onClick={() => setSelectedItem(item)}>
-                <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px', lineHeight: 1.3, paddingRight: '20px' }}>{item.name}</div>
-                <div style={{ fontSize: '11px', color: '#8899aa', marginBottom: '6px' }}>{item.set_name} · {item.number}</div>
+                {item.image_url ? (
+                  <img src={item.image_url} alt={item.name} style={{ width: '100%', height: 'auto', borderRadius: '6px', marginBottom: '8px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                ) : (
+                  <div style={{ width: '100%', height: '150px', borderRadius: '6px', backgroundColor: '#1a1a2e', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', color: '#555', fontSize: '12px', textAlign: 'center', padding: '8px' }}>{item.name}</div>
+                )}
+                <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '3px', lineHeight: 1.3, paddingRight: '20px' }}>{item.name}</div>
+                <div style={{ fontSize: '11px', color: '#8899aa', marginBottom: '4px' }}>{item.set_name} · {item.number}</div>
                 {item.rarity && (
-                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 600, color: '#fff', backgroundColor: rarityColor(item.rarity), marginBottom: '8px' }}>
+                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 600, color: '#fff', backgroundColor: rarityColor(item.rarity), marginBottom: '6px' }}>
                     {item.rarity}
                   </span>
                 )}

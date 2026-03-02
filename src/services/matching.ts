@@ -58,7 +58,7 @@ export function findMatches(userId: string) {
       JOIN users u ON u.id = ti.user_id
       JOIN cards_master cm ON cm.id = ti.card_id
       WHERE ti.card_id = ? AND ti.intent_type = ? AND ti.user_id != ? AND ti.status = 'active'
-    `).all(intent.card_id, oppositeType, userId) as any[];
+    `).all(intent.card_id, oppositeType, userId) as { matched_user_id: string; username: string; card_id: string; card_name: string; set_code: string; rarity: string | null }[];
 
     for (const m of matched) {
       matches.push({

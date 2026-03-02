@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import api from '../services/api';
+import { RANGES, formatPrice, formatDate } from '../utils/format';
 
 interface PortfolioItem {
   cardName: string;
@@ -8,6 +9,7 @@ interface PortfolioItem {
   purchasePrice: number | null;
   currentPrice: number | null;
   itemPL: number;
+  imageUrl: string | null;
 }
 
 interface PortfolioData {
@@ -21,26 +23,6 @@ interface PortfolioData {
 interface ChartPoint {
   date: string;
   totalValue: number;
-}
-
-const RANGES = [
-  { key: 'd', label: '1D' },
-  { key: 'w', label: '1W' },
-  { key: 'm', label: '1M' },
-  { key: '3m', label: '3M' },
-  { key: '6m', label: '6M' },
-  { key: 'y', label: '1Y' },
-  { key: 'all', label: 'ALL' },
-];
-
-function formatPrice(n: number | null | undefined): string {
-  if (n == null) return '--';
-  return `$${n.toFixed(2)}`;
-}
-
-function formatDate(d: string): string {
-  const date = new Date(d + 'T00:00:00');
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export default function PortfolioPage() {
@@ -203,10 +185,13 @@ export default function PortfolioPage() {
           const itemPlSign = item.itemPL >= 0 ? '+' : '';
           return (
             <div key={i} style={{ backgroundColor: '#16213e', borderRadius: '10px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '2px' }}>{item.cardName}</div>
-                <div style={{ fontSize: '12px', color: '#8899aa' }}>
-                  x{item.quantity} · {formatPrice(item.currentPrice)} each
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {item.imageUrl && <img src={item.imageUrl} alt={item.cardName} style={{ width: '40px', height: 'auto', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '2px' }}>{item.cardName}</div>
+                  <div style={{ fontSize: '12px', color: '#8899aa' }}>
+                    x{item.quantity} · {formatPrice(item.currentPrice)} each
+                  </div>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>

@@ -14,6 +14,7 @@ interface CollectionItem {
   number: string | null;
   set_name: string;
   rarity: string | null;
+  image_url: string | null;
 }
 
 interface GradeResult {
@@ -293,9 +294,12 @@ export default function GradesPage() {
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#0f3460')}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'transparent')}
               >
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '2px' }}>{item.name}</div>
-                  <div style={{ fontSize: '12px', color: '#8899aa' }}>{item.set_name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {item.image_url && <img src={item.image_url} alt={item.name} style={{ width: '40px', height: 'auto', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '2px' }}>{item.name}</div>
+                    <div style={{ fontSize: '12px', color: '#8899aa' }}>{item.set_name}</div>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <span style={{ display: 'inline-block', padding: '4px 10px', borderRadius: '8px', fontSize: '14px', fontWeight: 700, color: '#fff', backgroundColor: psaColor(grade.estimated_psa_grade) }}>
@@ -327,9 +331,12 @@ export default function GradesPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
             {ungradedItems.map((item) => (
               <div key={item.id} style={{ backgroundColor: '#16213e', borderRadius: '10px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '2px' }}>{item.name}</div>
-                  <div style={{ fontSize: '12px', color: '#8899aa' }}>{item.set_name} · {item.number}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {item.image_url && <img src={item.image_url} alt={item.name} style={{ width: '40px', height: 'auto', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '2px' }}>{item.name}</div>
+                    <div style={{ fontSize: '12px', color: '#8899aa' }}>{item.set_name} · {item.number}</div>
+                  </div>
                 </div>
                 {gradingItemId === item.id ? (
                   <span style={{ fontSize: '13px', color: '#e94560' }}>Analyzing...</span>

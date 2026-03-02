@@ -1,8 +1,12 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../db";
+import { fetchCardPrice } from "./pokemonTcgApi";
 
 interface Card {
   id: string;
+  name: string;
+  number: string | null;
+  set_code: string;
   rarity: string | null;
 }
 
@@ -24,7 +28,7 @@ const PRICE_RANGES: Record<string, [number, number]> = {
   "secret rare": [50.0, 500.0],
 };
 
-function generatePrice(rarity: string | null): number {
+function generateMockPrice(rarity: string | null): number {
   const range = PRICE_RANGES[rarity || "common"] || PRICE_RANGES.common;
   const [min, max] = range;
   const base = min + Math.random() * (max - min);
@@ -32,25 +36,73 @@ function generatePrice(rarity: string | null): number {
   return Math.round(variance * 100) / 100;
 }
 
-export function ingestPrices(): number {
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function ingestPrices(): Promise<number> {
   const today = new Date().toISOString().split("T")[0];
-  const cards = db.prepare("SELECT id, rarity FROM cards_master").all() as Card[];
+  const cards = db
+    .prepare("SELECT id, name, number, set_code, rarity FROM cards_master")
+    .all() as Card[];
 
   const insert = db.prepare(
     "INSERT INTO price_snapshots (id, card_id, price_usd, source, snapshot_date) VALUES (?, ?, ?, ?, ?)"
   );
 
-  const insertAll = db.transaction((cards: Card[]) => {
-    let count = 0;
-    for (const card of cards) {
-      const price = generatePrice(card.rarity);
-      insert.run(uuidv4(), card.id, price, "mock", today);
-      count++;
-    }
-    return count;
-  });
+  const hasApiKey = !!process.env.POKEMON_TCG_API_KEY;
 
-  return insertAll(cards);
+  if (!hasApiKey) {
+    console.log("No POKEMON_TCG_API_KEY set — using mock prices for all cards.");
+  } else {
+    console.log(`Fetching real prices for ${cards.length} cards (3s between calls)...`);
+  }
+
+  let realCount = 0;
+  let mockCount = 0;
+  const results: { cardId: string; price: number; source: string }[] = [];
+
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+    let price: number | null = null;
+    let source = "mock";
+
+    // Try real API price
+    if (hasApiKey && card.number) {
+      price = fetchCardPrice(card.set_code, card.number);
+      if (price != null) {
+        source = "tcgplayer";
+        realCount++;
+        console.log(`[real] ${card.name}: $${price.toFixed(2)}`);
+      }
+    }
+
+    // Fall back to mock
+    if (price == null) {
+      price = generateMockPrice(card.rarity);
+      source = "mock";
+      mockCount++;
+      console.log(`[mock] ${card.name}: $${price.toFixed(2)}`);
+    }
+
+    results.push({ cardId: card.id, price, source });
+
+    // 3 second delay between API calls to avoid rate limiting
+    if (hasApiKey && i < cards.length - 1) {
+      await delay(3000);
+    }
+  }
+
+  // Insert all prices in a transaction
+  const insertAll = db.transaction(() => {
+    for (const r of results) {
+      insert.run(uuidv4(), r.cardId, r.price, r.source, today);
+    }
+  });
+  insertAll();
+
+  console.log(`Price ingestion complete: ${realCount} real, ${mockCount} mock.`);
+  return results.length;
 }
 
 export function getLatestPrice(cardId: string): PriceSnapshot | undefined {

@@ -17,6 +17,7 @@ import { computeAllROI, getTopROICards, getCardROI } from "./services/roiEngine"
 import { checkPlan } from "./middleware/checkPlan";
 import { createTradeIntent, getTradeIntents, deleteTradeIntent, findMatches } from "./services/matching";
 import { getUserAlerts, markAlertRead, detectPriceSpikes, detectPortfolioChanges, detectROIOpportunities } from "./services/alerts";
+import { fetchAndUpdateAllCards } from "./services/pokemonTcgApi";
 
 dotenv.config();
 
@@ -544,9 +545,19 @@ router.post("/admin/reset-credits", authenticateToken, (req: AuthenticatedReques
   }
 });
 
-router.post("/admin/ingest-prices", authenticateToken, (req: AuthenticatedRequest, res) => {
+router.post("/admin/fetch-images", authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
-    const inserted = ingestPrices();
+    const count = await fetchAndUpdateAllCards();
+    res.json({ updated: count });
+  } catch (err) {
+    console.error("Error in POST /admin/fetch-images:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/admin/ingest-prices", authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const inserted = await ingestPrices();
     res.json({ inserted });
   } catch (err) {
     console.error("Error in /admin/ingest-prices:", err);
@@ -626,6 +637,17 @@ if (cardCount.count === 0) {
   console.log("Empty database detected, seeding cards...");
   const { seedCards } = require("./db/seed-data");
   seedCards();
+}
+
+// Background fetch card images if any are missing
+const missingImages = db.prepare("SELECT COUNT(*) as count FROM cards_master WHERE image_url IS NULL").get() as { count: number };
+if (missingImages.count > 0) {
+  console.log(`${missingImages.count} cards missing images, fetching in background...`);
+  fetchAndUpdateAllCards().then((count) => {
+    console.log(`Background image fetch complete: ${count} cards updated.`);
+  }).catch((err) => {
+    console.error("Background image fetch failed:", err);
+  });
 }
 
 app.listen(PORT, () => {

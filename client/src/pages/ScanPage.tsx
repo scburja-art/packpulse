@@ -14,6 +14,7 @@ interface CardResult {
   set_name: string;
   set_code: string;
   rarity: string | null;
+  image_url: string | null;
 }
 
 interface ScanCandidate {
@@ -336,7 +337,11 @@ export default function ScanPage() {
           {/* High confidence match — auto-added */}
           {result.success && result.card && (
             <div style={{ backgroundColor: '#16213e', borderRadius: '12px', padding: '24px', textAlign: 'center' }}>
-              <div style={{ fontSize: '48px', marginBottom: '12px' }}>✅</div>
+              {result.card.image_url ? (
+                <img src={result.card.image_url} alt={result.card.name} style={{ width: '150px', height: 'auto', borderRadius: '8px', marginBottom: '12px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              ) : (
+                <div style={{ fontSize: '48px', marginBottom: '12px' }}>✅</div>
+              )}
               <h2 style={{ fontSize: '20px', marginBottom: '4px' }}>{result.card.name}</h2>
               <p style={{ color: '#8899aa', fontSize: '13px', marginBottom: '4px' }}>
                 {result.card.set_name} · {result.card.number}
@@ -368,9 +373,12 @@ export default function ScanPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                 {result.candidates.map((c) => (
                   <div key={c.card.id} style={{ backgroundColor: '#16213e', borderRadius: '10px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: '14px', fontWeight: 600 }}>{c.card.name}</div>
-                      <div style={{ fontSize: '12px', color: '#8899aa' }}>{c.card.set_name} · {c.card.number}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {c.card.image_url && <img src={c.card.image_url} alt={c.card.name} style={{ width: '60px', height: 'auto', borderRadius: '4px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 600 }}>{c.card.name}</div>
+                        <div style={{ fontSize: '12px', color: '#8899aa' }}>{c.card.set_name} · {c.card.number}</div>
+                      </div>
                     </div>
                     <button
                       onClick={() => handleConfirmCandidate(c)}

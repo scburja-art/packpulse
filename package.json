@@ -10,7 +10,7 @@
     "build": "npm run build:client && npm run build:server",
     "start": "node dist/index.js",
     "seed": "ts-node src/db/seed.ts",
-    "ingest": "ts-node -e \"const { ingestPrices } = require('./src/services/priceIngestion'); console.log('Inserted:', ingestPrices())\"",
+    "ingest": "ts-node -e \"require('dotenv').config(); require('./src/services/priceIngestion').ingestPrices().then((n: number) => console.log('Inserted:', n))\"",
     "seed:user": "ts-node src/db/seedTestUser.ts",
     "seed:trades": "ts-node src/db/seedTradeUsers.ts",
     "seed:prices": "ts-node src/db/seedPrices.ts",
@@ -18,6 +18,7 @@
     "db:backup": "ts-node src/db/backup.ts",
     "db:setup": "npm run seed && npm run seed:prices",
     "db:reset": "npm run db:backup && rm -f data/autograde.db && npm run db:setup",
+    "fetch:images": "ts-node -e \"require('./src/services/pokemonTcgApi').fetchAndUpdateAllCards().then(console.log)\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -28,8 +29,6 @@
   },
   "type": "commonjs",
   "dependencies": {
-    "@types/multer": "^2.0.0",
-    "@types/string-similarity": "^4.0.2",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
     "dotenv": "^17.3.1",
@@ -41,6 +40,8 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/multer": "^2.0.0",
+    "@types/string-similarity": "^4.0.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",

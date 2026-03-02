@@ -6,6 +6,7 @@ interface PortfolioItem {
   purchasePrice: number | null;
   currentPrice: number | null;
   itemPL: number;
+  imageUrl: string | null;
 }
 
 interface PortfolioValue {
@@ -26,6 +27,7 @@ interface CollectionItemRow {
   card_name: string;
   quantity: number;
   purchase_price: number | null;
+  image_url: string | null;
 }
 
 interface PriceRow {
@@ -41,7 +43,7 @@ interface SnapshotRow {
 
 export function getPortfolioValue(userId: string): PortfolioValue {
   const rows = db.prepare(`
-    SELECT ci.card_id, cm.name as card_name, ci.quantity, ci.purchase_price
+    SELECT ci.card_id, cm.name as card_name, ci.quantity, ci.purchase_price, cm.image_url
     FROM collection_items ci
     JOIN collections c ON c.id = ci.collection_id
     JOIN cards_master cm ON cm.id = ci.card_id
@@ -77,6 +79,7 @@ export function getPortfolioValue(userId: string): PortfolioValue {
       purchasePrice,
       currentPrice,
       itemPL: currentTotal - costTotal,
+      imageUrl: row.image_url,
     });
   }
 

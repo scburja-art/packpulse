@@ -1,11 +1,10 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../db";
 
-// TODO: Restore limits before production launch
 export const PLAN_LIMITS: Record<string, { scans: number; pregrades: number }> = {
-  free: { scans: Infinity, pregrades: Infinity },
-  starter: { scans: Infinity, pregrades: Infinity },
-  pro: { scans: Infinity, pregrades: Infinity },
+  free: { scans: 5, pregrades: 3 },
+  starter: { scans: 50, pregrades: 25 },
+  pro: { scans: 200, pregrades: 100 },
   premium: { scans: Infinity, pregrades: Infinity },
 };
 
