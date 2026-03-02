@@ -557,8 +557,8 @@ router.post("/admin/fetch-images", authenticateToken, async (req: AuthenticatedR
 
 router.post("/admin/ingest-prices", authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
-    const inserted = await ingestPrices();
-    res.json({ inserted });
+    const result = await ingestPrices();
+    res.json(result);
   } catch (err) {
     console.error("Error in /admin/ingest-prices:", err);
     res.status(500).json({ error: "Internal server error" });

@@ -40,7 +40,17 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function ingestPrices(): Promise<number> {
+// Legacy set codes that don't work with the Pokemon TCG API
+const LEGACY_SET_CODES = new Set(["BS", "JU", "FO", "TR", "N1"]);
+
+export interface IngestionResult {
+  updated: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
+
+export async function ingestPrices(): Promise<IngestionResult> {
   const today = new Date().toISOString().split("T")[0];
   const cards = db
     .prepare("SELECT id, name, number, set_code, rarity FROM cards_master")
@@ -51,58 +61,76 @@ export async function ingestPrices(): Promise<number> {
   );
 
   const hasApiKey = !!process.env.POKEMON_TCG_API_KEY;
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
 
   if (!hasApiKey) {
-    console.log("No POKEMON_TCG_API_KEY set — using mock prices for all cards.");
+    console.log("ATLAS: No POKEMON_TCG_API_KEY set — using mock prices for all cards.");
   } else {
-    console.log(`Fetching real prices for ${cards.length} cards (3s between calls)...`);
+    console.log(`ATLAS: Fetching real prices for ${cards.length} cards (1s between calls)...`);
   }
-
-  let realCount = 0;
-  let mockCount = 0;
-  const results: { cardId: string; price: number; source: string }[] = [];
 
   for (let i = 0; i < cards.length; i++) {
     const card = cards[i];
+
+    // Skip legacy set codes that don't work with the API
+    if (LEGACY_SET_CODES.has(card.set_code)) {
+      skipped++;
+      if (skipped === 1 || skipped % 5 === 0) {
+        console.log(`ATLAS: [skip] ${card.name} — legacy set ${card.set_code} not supported by API`);
+      }
+      continue;
+    }
+
     let price: number | null = null;
     let source = "mock";
 
     // Try real API price
     if (hasApiKey && card.number) {
-      price = fetchCardPrice(card.set_code, card.number);
-      if (price != null) {
-        source = "tcgplayer";
-        realCount++;
-        console.log(`[real] ${card.name}: $${price.toFixed(2)}`);
+      try {
+        price = fetchCardPrice(card.set_code, card.number);
+        if (price != null) {
+          source = "tcgplayer";
+        }
+      } catch {
+        failed++;
+        console.log(`ATLAS: [fail] ${card.name} — API error`);
       }
     }
 
-    // Fall back to mock
+    // Fall back to mock if API failed or no key
     if (price == null) {
       price = generateMockPrice(card.rarity);
       source = "mock";
-      mockCount++;
-      console.log(`[mock] ${card.name}: $${price.toFixed(2)}`);
     }
 
-    results.push({ cardId: card.id, price, source });
+    // Insert immediately — survives process death
+    try {
+      insert.run(uuidv4(), card.id, price, source, today);
+      updated++;
+      console.log(`ATLAS: [${source}] ${card.name}: $${price.toFixed(2)}`);
+    } catch (err: any) {
+      failed++;
+      console.log(`ATLAS: [fail] ${card.name} — DB insert error: ${err.message}`);
+    }
 
-    // 3 second delay between API calls to avoid rate limiting
-    if (hasApiKey && i < cards.length - 1) {
-      await delay(3000);
+    // Progress logging every 10 cards
+    const processed = updated + skipped + failed;
+    if (processed % 10 === 0) {
+      console.log(`ATLAS: ${processed}/${cards.length} cards processed (${skipped} skipped)`);
+    }
+
+    // 1 second delay between API calls to avoid rate limiting
+    if (hasApiKey && source === "tcgplayer" && i < cards.length - 1) {
+      await delay(1000);
     }
   }
 
-  // Insert all prices in a transaction
-  const insertAll = db.transaction(() => {
-    for (const r of results) {
-      insert.run(uuidv4(), r.cardId, r.price, r.source, today);
-    }
-  });
-  insertAll();
-
-  console.log(`Price ingestion complete: ${realCount} real, ${mockCount} mock.`);
-  return results.length;
+  const processed = updated + skipped + failed;
+  console.log(`ATLAS: ${processed}/${cards.length} cards processed (${skipped} skipped)`);
+  console.log(`ATLAS: Price ingestion complete — ${updated} updated, ${skipped} skipped, ${failed} failed.`);
+  return { updated, skipped, failed, total: cards.length };
 }
 
 export function getLatestPrice(cardId: string): PriceSnapshot | undefined {

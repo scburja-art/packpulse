@@ -10,7 +10,7 @@
     "build": "npm run build:client && npm run build:server",
     "start": "node dist/index.js",
     "seed": "ts-node src/db/seed.ts",
-    "ingest": "ts-node -e \"require('dotenv').config(); require('./src/services/priceIngestion').ingestPrices().then((n: number) => console.log('Inserted:', n))\"",
+    "ingest": "ts-node -e \"require('dotenv').config(); require('./src/services/priceIngestion').ingestPrices().then((r: any) => console.log('ATLAS: Result:', JSON.stringify(r)))\"",
     "seed:user": "ts-node src/db/seedTestUser.ts",
     "seed:trades": "ts-node src/db/seedTradeUsers.ts",
     "seed:prices": "ts-node src/db/seedPrices.ts",
