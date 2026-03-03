@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
     price_usd REAL NOT NULL,
     source TEXT NOT NULL,
     snapshot_date TEXT NOT NULL,
+    verified INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

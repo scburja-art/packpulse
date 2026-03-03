@@ -96,15 +96,36 @@ function gatherMetrics() {
           WHERE curr.snapshot_date = ?
             AND prev.snapshot_date = ?
             AND prev.price_usd > 0
+            AND curr.verified = 1
           ORDER BY ABS(curr.price_usd - prev.price_usd) DESC
           LIMIT 3
         `).all(dates[0].snapshot_date, dates[1].snapshot_date);
         metrics.topMovers = movers;
+
+        const unverifiedMovers = db.prepare(`
+          SELECT cm.name, cm.set_name,
+            curr.price_usd as current_price,
+            prev.price_usd as previous_price,
+            (curr.price_usd - prev.price_usd) as change,
+            ROUND(((curr.price_usd - prev.price_usd) / prev.price_usd) * 100, 1) as change_pct
+          FROM price_snapshots curr
+          JOIN price_snapshots prev ON curr.card_id = prev.card_id
+          JOIN cards_master cm ON cm.id = curr.card_id
+          WHERE curr.snapshot_date = ?
+            AND prev.snapshot_date = ?
+            AND prev.price_usd > 0
+            AND curr.verified = 0
+          ORDER BY ABS(curr.price_usd - prev.price_usd) DESC
+          LIMIT 10
+        `).all(dates[0].snapshot_date, dates[1].snapshot_date);
+        metrics.unverifiedMovers = unverifiedMovers;
       } else {
         metrics.topMovers = [];
+        metrics.unverifiedMovers = [];
       }
     } catch {
       metrics.topMovers = [];
+      metrics.unverifiedMovers = [];
     }
 
     // Card catalog size
@@ -180,15 +201,24 @@ async function sendDailyBriefing() {
   ].join('\n');
 
   // Top movers display
-  let moversStr;
+  let moversStr = '';
   if (metrics.topMovers.length > 0) {
-    moversStr = metrics.topMovers.map((m, i) => {
+    moversStr += '🏆 **Top 3 Price Movers (Verified)**\n';
+    moversStr += metrics.topMovers.map((m, i) => {
       const arrow = m.change >= 0 ? '📈' : '📉';
       const sign = m.change >= 0 ? '+' : '';
       return `${i + 1}. ${arrow} **${m.name}** (${m.set_name}): ${formatCurrency(m.current_price)} (${sign}${m.change_pct}%)`;
     }).join('\n');
   } else {
-    moversStr = '_Insufficient historical data — need 2+ snapshot dates to compare_';
+    moversStr += '_Insufficient verified historical data to compare_\n';
+  }
+
+  if (metrics.unverifiedMovers && metrics.unverifiedMovers.length > 0) {
+    moversStr += '\n\n⚠️ **Unverified Movements (flagged for review)**\n';
+    moversStr += metrics.unverifiedMovers.map(m => {
+      const sign = m.change >= 0 ? '+' : '';
+      return `- **${m.name}**: ${formatCurrency(m.current_price)} (${sign}${m.change_pct}%) — awaiting verification`;
+    }).join('\n');
   }
 
   const embed = {
@@ -212,7 +242,7 @@ async function sendDailyBriefing() {
         inline: false,
       },
       {
-        name: '🏆 Top 3 Price Movers',
+        name: '🏆 Price Movers',
         value: moversStr,
         inline: false,
       },

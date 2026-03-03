@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../db";
-import { fetchCardPrice } from "./pokemonTcgApi";
+import { fetchCardPrice, fetchSetsBySeries, fetchCardsBySet, extractBestPrice } from "./pokemonTcgApi";
 
 interface Card {
   id: string;
@@ -16,6 +16,7 @@ interface PriceSnapshot {
   price_usd: number;
   source: string;
   snapshot_date: string;
+  verified: number;
   created_at: string;
 }
 
@@ -29,7 +30,7 @@ const PRICE_RANGES: Record<string, [number, number]> = {
 };
 
 function generateMockPrice(rarity: string | null): number {
-  const range = PRICE_RANGES[rarity || "common"] || PRICE_RANGES.common;
+  const range = PRICE_RANGES[rarity ? rarity.toLowerCase() : "common"] || PRICE_RANGES.common;
   const [min, max] = range;
   const base = min + Math.random() * (max - min);
   const variance = base * (0.95 + Math.random() * 0.1); // +/- 5%
@@ -52,85 +53,158 @@ export interface IngestionResult {
 
 export async function ingestPrices(): Promise<IngestionResult> {
   const today = new Date().toISOString().split("T")[0];
-  const cards = db
-    .prepare("SELECT id, name, number, set_code, rarity FROM cards_master")
-    .all() as Card[];
-
-  const insert = db.prepare(
-    "INSERT INTO price_snapshots (id, card_id, price_usd, source, snapshot_date) VALUES (?, ?, ?, ?, ?)"
-  );
-
   const hasApiKey = !!process.env.POKEMON_TCG_API_KEY;
   let updated = 0;
   let skipped = 0;
   let failed = 0;
 
-  if (!hasApiKey) {
-    console.log("ATLAS: No POKEMON_TCG_API_KEY set — using mock prices for all cards.");
-  } else {
-    console.log(`ATLAS: Fetching real prices for ${cards.length} cards (1s between calls)...`);
+  const insertSnapshot = db.prepare(
+    "INSERT INTO price_snapshots (id, card_id, price_usd, source, snapshot_date, verified) VALUES (?, ?, ?, ?, ?, ?)"
+  );
+
+  const upsertCard = db.prepare(`
+    INSERT INTO cards_master (id, name, number, set_name, set_code, rarity, image_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(name, number, set_code) DO UPDATE SET
+      rarity = excluded.rarity,
+      image_url = excluded.image_url
+  `);
+
+  if (hasApiKey) {
+    console.log("ATLAS: Fetching Scarlet & Violet sets...");
+    const svSets = fetchSetsBySeries("Scarlet & Violet");
+
+    if (svSets.length > 0) {
+      console.log(`ATLAS: Found ${svSets.length} Scarlet & Violet sets to ingest.`);
+      for (const set of svSets) {
+        console.log(`ATLAS: Fetching cards for set ${set.name} (${set.id})...`);
+        const cards = fetchCardsBySet(set.id);
+        console.log(`ATLAS: Ingesting ${cards.length} cards from ${set.name}`);
+
+        for (let i = 0; i < cards.length; i++) {
+          const card = cards[i];
+          if (!card.number) {
+            skipped++;
+            continue;
+          }
+
+          const cardId = card.id;
+          try {
+            upsertCard.run(
+              cardId,
+              card.name,
+              card.number,
+              set.name,
+              set.id,
+              card.rarity || null,
+              card.images?.small || null
+            );
+          } catch (e) {
+            console.error(`ATLAS: [fail] upsert card ${card.name}`, (e as Error).message);
+          }
+
+          let price: number | null = null;
+          if (card.tcgplayer?.prices) {
+            price = extractBestPrice(card.tcgplayer.prices);
+          }
+
+          if (price == null) {
+            skipped++;
+            continue;
+          }
+
+          // Anomaly Filter
+          let verified = 1;
+          const prev = getLatestPrice(cardId);
+          if (prev) {
+            const oldPrice = prev.price_usd;
+            if (oldPrice > 0) {
+              const pctChange = Math.abs((price - oldPrice) / oldPrice * 100);
+              if (pctChange > 80) {
+                verified = 0;
+                console.log(`ATLAS: ⚠️ Anomaly detected for ${card.name}: $${oldPrice} -> $${price} (${pctChange.toFixed(1)}%)`);
+
+                const P0_WEBHOOK = process.env.DISCORD_WEBHOOK_P0_ALERTS;
+                if (P0_WEBHOOK) {
+                  try {
+                    await fetch(P0_WEBHOOK, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        username: "SENTINEL",
+                        avatar_url: "https://cdn-icons-png.flaticon.com/512/3135/3135755.png",
+                        embeds: [{
+                          title: "🔴 P0 Alert: Unverified Price Anomaly",
+                          description: `Card: **${card.name}** (${set.name})\nOld Price: $${oldPrice.toFixed(2)}\nNew Price: $${price.toFixed(2)}\nChange: ${pctChange.toFixed(1)}%`,
+                          color: 0xff0000,
+                          timestamp: new Date().toISOString()
+                        }]
+                      })
+                    });
+                  } catch (e) { }
+                }
+              }
+            }
+          } else {
+            console.log(`ATLAS: [initial_snapshot] First price for ${card.name}`);
+          }
+
+          try {
+            insertSnapshot.run(uuidv4(), cardId, price, "tcgplayer", today, verified);
+            updated++;
+          } catch (e) {
+            failed++;
+          }
+        }
+
+        await delay(1000);
+      }
+    }
   }
 
-  for (let i = 0; i < cards.length; i++) {
-    const card = cards[i];
-
-    // Skip legacy set codes that don't work with the API
-    if (LEGACY_SET_CODES.has(card.set_code)) {
-      skipped++;
-      if (skipped === 1 || skipped % 5 === 0) {
-        console.log(`ATLAS: [skip] ${card.name} — legacy set ${card.set_code} not supported by API`);
-      }
-      continue;
-    }
+  console.log("ATLAS: Doing secondary pass for existing legacy cards...");
+  const localCards = db.prepare("SELECT id, name, number, set_code, rarity FROM cards_master").all() as Card[];
+  for (const card of localCards) {
+    const countToday = db.prepare("SELECT COUNT(*) as count FROM price_snapshots WHERE card_id = ? AND snapshot_date = ?").get(card.id, today) as any;
+    if (countToday.count > 0) continue;
 
     let price: number | null = null;
     let source = "mock";
 
-    // Try real API price
-    if (hasApiKey && card.number) {
+    if (hasApiKey && !LEGACY_SET_CODES.has(card.set_code) && card.number) {
       try {
         price = fetchCardPrice(card.set_code, card.number);
-        if (price != null) {
-          source = "tcgplayer";
-        }
-      } catch {
-        failed++;
-        console.log(`ATLAS: [fail] ${card.name} — API error`);
-      }
+        if (price != null) source = "tcgplayer";
+      } catch { }
     }
 
-    // Fall back to mock if API failed or no key
     if (price == null) {
       price = generateMockPrice(card.rarity);
       source = "mock";
     }
 
-    // Insert immediately — survives process death
+    let verified = 1;
+    const prev = getLatestPrice(card.id);
+    if (prev && prev.price_usd > 0) {
+      const pctChange = Math.abs((price - prev.price_usd) / prev.price_usd * 100);
+      if (pctChange > 80) verified = 0;
+    }
+
     try {
-      insert.run(uuidv4(), card.id, price, source, today);
+      insertSnapshot.run(uuidv4(), card.id, price, source, today, verified);
       updated++;
-      console.log(`ATLAS: [${source}] ${card.name}: $${price.toFixed(2)}`);
-    } catch (err: any) {
+    } catch {
       failed++;
-      console.log(`ATLAS: [fail] ${card.name} — DB insert error: ${err.message}`);
     }
 
-    // Progress logging every 10 cards
-    const processed = updated + skipped + failed;
-    if (processed % 10 === 0) {
-      console.log(`ATLAS: ${processed}/${cards.length} cards processed (${skipped} skipped)`);
-    }
-
-    // 1 second delay between API calls to avoid rate limiting
-    if (hasApiKey && source === "tcgplayer" && i < cards.length - 1) {
+    if (hasApiKey && source === "tcgplayer") {
       await delay(1000);
     }
   }
 
   const processed = updated + skipped + failed;
-  console.log(`ATLAS: ${processed}/${cards.length} cards processed (${skipped} skipped)`);
   console.log(`ATLAS: Price ingestion complete — ${updated} updated, ${skipped} skipped, ${failed} failed.`);
-  return { updated, skipped, failed, total: cards.length };
+  return { updated, skipped, failed, total: processed };
 }
 
 export function getLatestPrice(cardId: string): PriceSnapshot | undefined {

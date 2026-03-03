@@ -4,7 +4,7 @@ Agent orchestration configuration for the **PackPulse** project, managed by the 
 
 ## CEO
 
-**Vadim Strizheus** — CEO & Founder
+**Steven Burja** — CEO & Founder
 - Final authority on all Tier 2+ decisions
 - Reviews daily briefings and weekly reports
 - Sets product strategy and roadmap priorities

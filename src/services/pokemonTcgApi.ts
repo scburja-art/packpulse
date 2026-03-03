@@ -96,6 +96,29 @@ interface TcgPlayerPrices {
   "1stEditionNormal"?: TcgPlayerPriceVariant;
 }
 
+export interface PokemonTcgSet {
+  id: string;
+  name: string;
+  series: string;
+  ptcgoCode?: string;
+  releaseDate?: string;
+}
+
+export interface PokemonTcgCard {
+  id: string;
+  name: string;
+  number: string;
+  set: PokemonTcgSet;
+  rarity?: string;
+  tcgplayer?: {
+    prices?: TcgPlayerPrices;
+  };
+  images?: {
+    small?: string;
+    large?: string;
+  };
+}
+
 export function extractBestPrice(prices: TcgPlayerPrices): number | null {
   const variants: (keyof TcgPlayerPrices)[] = [
     "holofoil",
@@ -157,4 +180,30 @@ export function fetchCardPrice(setCode: string, cardNumber: string): number | nu
   if (!response?.data?.tcgplayer?.prices) return null;
 
   return extractBestPrice(response.data.tcgplayer.prices);
+}
+
+export function fetchSetsBySeries(series: string): PokemonTcgSet[] {
+  const url = `https://api.pokemontcg.io/v2/sets?q=series:"${encodeURIComponent(series)}"&orderBy=-releaseDate`;
+  const response = curlJsonWithKey(url, 2);
+  return response?.data || [];
+}
+
+export function fetchCardsBySet(setId: string): PokemonTcgCard[] {
+  let allCards: PokemonTcgCard[] = [];
+  let page = 1;
+  while (true) {
+    const url = `https://api.pokemontcg.io/v2/cards?q=set.id:${setId}&page=${page}&pageSize=250`;
+    const response = curlJsonWithKey(url, 2);
+    if (!response?.data || response.data.length === 0) break;
+
+    allCards = allCards.concat(response.data);
+
+    if (page * 250 >= (response?.totalCount || 0)) break;
+    page++;
+
+    try {
+      execSync('sleep 1');
+    } catch (e) { }
+  }
+  return allCards;
 }

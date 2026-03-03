@@ -43,6 +43,7 @@ async function runIngestion() {
     duration_ms: 0,
     cards_updated: 0,
     cards_failed: 0,
+    sets_synced: 0,
     status: 'failed',
     errors: [],
     raw_output: '',
@@ -63,11 +64,14 @@ async function runIngestion() {
     const insertedMatch = output.match(/Inserted:\s*(\d+)/i);
     const updatedMatch = output.match(/(\d+)\s*(?:prices?\s*(?:inserted|updated|ingested)|cards?\s*updated)/i);
     const failedMatch = output.match(/(\d+)\s*(?:failed|errors?)/i);
+    const setsMatch = output.match(/Found (\d+) Scarlet & Violet sets/i);
 
     result.cards_updated = insertedMatch
       ? parseInt(insertedMatch[1], 10)
       : (updatedMatch ? parseInt(updatedMatch[1], 10) : 0);
     result.cards_failed = failedMatch ? parseInt(failedMatch[1], 10) : 0;
+    result.sets_synced = setsMatch ? parseInt(setsMatch[1], 10) : 0;
+
     result.status = result.cards_updated > 0 ? 'success' : 'partial';
 
     console.log(`[ATLAS] Ingestion complete:`, JSON.stringify({
@@ -159,6 +163,7 @@ async function checkDataFreshness() {
     fields: [
       { name: 'Cards Updated', value: `${result.cards_updated}`, inline: true },
       { name: 'Failures', value: `${result.cards_failed}`, inline: true },
+      { name: 'Modern Sets', value: `${result.sets_synced}`, inline: true },
       { name: 'Duration', value: `${(result.duration_ms / 1000).toFixed(1)}s`, inline: true },
       { name: 'Data Freshness', value: freshnessStatus, inline: true },
       { name: 'Latest Snapshot', value: freshness.latest || 'None', inline: true },
