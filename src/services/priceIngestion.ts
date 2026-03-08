@@ -49,14 +49,19 @@ export interface IngestionResult {
   skipped: number;
   failed: number;
   total: number;
+  realPrices: number;
+  mockPrices: number;
 }
 
 export async function ingestPrices(): Promise<IngestionResult> {
   const today = new Date().toISOString().split("T")[0];
   const hasApiKey = !!process.env.POKEMON_TCG_API_KEY;
+  const allowMockPrices = process.env.ALLOW_MOCK_PRICES !== "false";
   let updated = 0;
   let skipped = 0;
   let failed = 0;
+  let realPrices = 0;
+  let mockPrices = 0;
 
   const insertSnapshot = db.prepare(
     "INSERT INTO price_snapshots (id, card_id, price_usd, source, snapshot_date, verified) VALUES (?, ?, ?, ?, ?, ?)"
@@ -152,6 +157,7 @@ export async function ingestPrices(): Promise<IngestionResult> {
           try {
             insertSnapshot.run(uuidv4(), cardId, price, "tcgplayer", today, verified);
             updated++;
+            realPrices++;
           } catch (e) {
             failed++;
           }
@@ -179,6 +185,11 @@ export async function ingestPrices(): Promise<IngestionResult> {
     }
 
     if (price == null) {
+      if (!allowMockPrices) {
+        console.log(`ATLAS: [SKIPPED] ${card.name} — no real price available, mock disabled`);
+        skipped++;
+        continue;
+      }
       price = generateMockPrice(card.rarity);
       source = "mock";
     }
@@ -193,6 +204,11 @@ export async function ingestPrices(): Promise<IngestionResult> {
     try {
       insertSnapshot.run(uuidv4(), card.id, price, source, today, verified);
       updated++;
+      if (source === "tcgplayer") {
+        realPrices++;
+      } else {
+        mockPrices++;
+      }
     } catch {
       failed++;
     }
@@ -203,8 +219,14 @@ export async function ingestPrices(): Promise<IngestionResult> {
   }
 
   const processed = updated + skipped + failed;
+  const mockPct = updated > 0 ? (mockPrices / updated) * 100 : 0;
+  if (mockPct > 50) {
+    console.warn(`ATLAS: [INGESTION WARNING] ${realPrices} real prices, ${mockPrices} mock prices — API may be down`);
+  } else {
+    console.log(`ATLAS: [INGESTION COMPLETE] ${realPrices} real prices, ${mockPrices} mock prices`);
+  }
   console.log(`ATLAS: Price ingestion complete — ${updated} updated, ${skipped} skipped, ${failed} failed.`);
-  return { updated, skipped, failed, total: processed };
+  return { updated, skipped, failed, total: processed, realPrices, mockPrices };
 }
 
 export function getLatestPrice(cardId: string): PriceSnapshot | undefined {
